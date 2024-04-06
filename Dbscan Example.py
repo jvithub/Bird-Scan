@@ -5,14 +5,16 @@ from PyQt5 import QtWidgets
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from sklearn.cluster import DBSCAN
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
+
 
 # Change the configuration file name
 configFileName = 'Config Files/A.cfg'
 
 CLIport = {}
 Dataport = {}
-byteBuffer = np.zeros(2**15,dtype = 'uint8')
-byteBufferLength = 0;
+byteBuffer = np.zeros(2**15, dtype = 'uint8')
+byteBufferLength = 0
 
 
 # ------------------------------------------------------------------
@@ -74,21 +76,21 @@ def parseConfigFile(configFileName):
             rampEndTime = float(splitWords[5])
             freqSlopeConst = float(splitWords[8])
             numAdcSamples = int(splitWords[10])
-            numAdcSamplesRoundTo2 = 1;
+            numAdcSamplesRoundTo2 = 1
             
             while numAdcSamples > numAdcSamplesRoundTo2:
-                numAdcSamplesRoundTo2 = numAdcSamplesRoundTo2 * 2;
+                numAdcSamplesRoundTo2 = numAdcSamplesRoundTo2 * 2
                 
-            digOutSampleRate = int(splitWords[11]);
+            digOutSampleRate = int(splitWords[11])
             
         # Get the information about the frame configuration    
         elif "frameCfg" in splitWords[0]:
             
-            chirpStartIdx = int(splitWords[1]);
-            chirpEndIdx = int(splitWords[2]);
-            numLoops = int(splitWords[3]);
-            numFrames = int(splitWords[4]);
-            framePeriodicity = float(splitWords[5]);
+            chirpStartIdx = int(splitWords[1])
+            chirpEndIdx = int(splitWords[2])
+            numLoops = int(splitWords[3])
+            numFrames = int(splitWords[4])
+            framePeriodicity = float(splitWords[5])
 
             
     # Combine the read data to obtain the configuration parameters           
@@ -110,13 +112,13 @@ def readAndParseData18xx(Dataport, configParameters):
     global byteBuffer, byteBufferLength
     
     # Constants
-    OBJ_STRUCT_SIZE_BYTES = 12;
-    BYTE_VEC_ACC_MAX_SIZE = 2**15;
-    MMWDEMO_UART_MSG_DETECTED_POINTS = 1;
-    MMWDEMO_UART_MSG_RANGE_PROFILE   = 2;
-    maxBufferSize = 2**15;
-    tlvHeaderLengthInBytes = 8;
-    pointLengthInBytes = 16;
+    OBJ_STRUCT_SIZE_BYTES = 12
+    BYTE_VEC_ACC_MAX_SIZE = 2**15
+    MMWDEMO_UART_MSG_DETECTED_POINTS = 1
+    MMWDEMO_UART_MSG_RANGE_PROFILE   = 2
+    maxBufferSize = 2**15
+    tlvHeaderLengthInBytes = 8
+    pointLengthInBytes = 16
     magicWord = [2, 1, 4, 3, 6, 5, 8, 7]
     
     # Initialize variables
@@ -272,7 +274,7 @@ def update():
         # Perform DBSCAN clustering
         X = np.column_stack((x, y))
         dbscan = DBSCAN(eps=0.5, min_samples=4)
-        labels = dbscan.fit_predict(X)
+        labels = dbscan.fit_predict(X) # [0, -1, 1, 0, 2, 0, -1, 1...] 0th, 3rd, and 5th element belong to 0th cluster etc...
         
         # Clear previous scatter plot items
         p.clear()
@@ -280,13 +282,28 @@ def update():
         # Plot data points coloured by DBSCAN cluster labels
         for label in np.unique(labels):
             if label == -1:  # Outliers
-                mask = (labels == label)
+                mask = (labels == label) # e.g. mask = [True, False, False, True, True...]
                 p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(255, 0, 0), symbolSize=5)
             else:  # Inliers
                 mask = (labels == label)
                 p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(0, 0, 255), symbolSize=5)
+                points = np.column_stack((x[mask], y[mask]))
+                hull = ConvexHull(points) # Perform Convex Hull algorithm
+                for simplex in hull.simplices:
+                    p.plot(points[simplex, 0], points[simplex, 1], pen=pg.mkPen(color='k', width=3))
                 
-        p.plot(x = [-5.77, 0, 5.77], y = [10, 0, 10], pen=pg.mkPen(color='r', width=2))
+        # Add radial boundaries - Azmiuth 30 deg        
+        p.plot(x = [-5.77, 0, 5.77], y = [10, 0, 10], pen=pg.mkPen(color='g', width=2))
+        
+        # Add circular grid lines
+        num_lines = 5
+        radius = 2
+        angles = np.linspace(0, 2*np.pi, 100)
+        for i in range(1, num_lines + 1):
+            x = radius * np.cos(angles)
+            y = radius * np.sin(angles)
+            p.plot(x, y, pen=pg.mkPen(color='g', width=2, style=pg.QtCore.Qt.DotLine))
+            radius += 2 
         
         # s.setData(x, y)
         QtWidgets.QApplication.processEvents()
@@ -306,7 +323,7 @@ configParameters = parseConfigFile(configFileName)
 app = QtWidgets.QApplication([])
 
 # Set the plot 
-pg.setConfigOption('background', 'w')
+pg.setConfigOption('background', 'b')
 win = pg.GraphicsLayoutWidget(title="2D scatter plot")
 p = win.addPlot()
 p.setXRange(-6, 6)
@@ -315,16 +332,19 @@ p.setLabel('left',text = 'Y position (m)')
 p.setLabel('bottom', text= 'X position (m)')
 p.setLabel('right',text =None)
 p.setLabel('top', text=None)
-p.showGrid(True, True)
-s = p.plot([],[],pen=None,symbol='o')
-win.show()
+# p.showGrid(True, True)
+# s = p.plot([],[],pen=None,symbol='o')
 
 # Set the border color and width
-border_pen = pg.mkPen(color='k', width=2)
+border_pen = pg.mkPen(color='g', width=2)
 p.getAxis('left').setPen(border_pen)  # Left border
 p.getAxis('bottom').setPen(border_pen)  # Bottom border
 p.getAxis('right').setPen(border_pen)  # Right border
 p.getAxis('top').setPen(border_pen)  # Top border
+
+p.setAspectLocked()    
+
+win.show()
 
 # Main loop 
 detObj = {}  
