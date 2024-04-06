@@ -234,7 +234,7 @@ def readAndParseData18xx(Dataport, configParameters):
                     idX += 4
                 
                 # Store the data in the detObj dictionary
-                detObj = {"numObj": numDetectedObj, "x": x, "y": y, "z": z, "velocity":velocity}
+                detObj = {"numObj": numDetectedObj, "x": x, "y": y, "z": z, "velocity": velocity}
                 dataOK = 1
                 
  
@@ -291,6 +291,10 @@ def update():
                 hull = ConvexHull(points) # Perform Convex Hull algorithm
                 for simplex in hull.simplices:
                     p.plot(points[simplex, 0], points[simplex, 1], pen=pg.mkPen(color='k', width=3))
+                text = pg.TextItem(str(format(hull.area, '.3f')))
+                p.addItem(text)
+                text.setPos(points[simplex, 0][0], points[simplex, 1][0])
+                # print(hull.area) # print the area of the corresponding shapes
                 
         # Add radial boundaries - Azmiuth 30 deg        
         p.plot(x = [-5.77, 0, 5.77], y = [10, 0, 10], pen=pg.mkPen(color='g', width=2))
@@ -360,7 +364,7 @@ while True:
             frameData[currentIndex] = detObj
             currentIndex += 1
         
-        time.sleep(0.05) # Sampling frequency of 30 Hz
+        time.sleep(0.05) # Sampling frequency of 30 Hz ### \\TODO - HINT INTO FRAME RATE ISSUE???
         
     # Stop the program and close everything if Ctrl + c is pressed
     except KeyboardInterrupt:
