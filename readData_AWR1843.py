@@ -8,7 +8,7 @@ from pyqtgraph.Qt import QtGui
 from sklearn.cluster import KMeans
 
 # Change the configuration file name
-configFileName = 'Config Files/A.cfg'
+configFileName = 'Config Files/B.cfg'
 
 CLIport = {}
 Dataport = {}
@@ -315,7 +315,7 @@ while True:
             frameData[currentIndex] = detObj
             currentIndex += 1
         
-        time.sleep(0.05) # Sampling frequency of 30 Hz
+        # time.sleep(0.05) # Sampling frequency of 30 Hz
         
     # Stop the program and close everything if Ctrl + c is pressed
     except KeyboardInterrupt:

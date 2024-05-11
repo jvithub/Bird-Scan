@@ -1,21 +1,20 @@
 import serial
 import time
 import numpy as np
-from PyQt5 import QtWidgets 
+from PyQt5 import QtWidgets
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from sklearn.cluster import DBSCAN
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
-
+from scipy.spatial import ConvexHull
 
 # Change the configuration file name
-configFileName = 'Config Files/A.cfg'
+configFileName = 'Config Files/B.cfg'
 
 CLIport = {}
 Dataport = {}
 byteBuffer = np.zeros(2**15, dtype = 'uint8')
 byteBufferLength = 0
-
+tracked_objects = {}
 
 # ------------------------------------------------------------------
 
@@ -256,7 +255,7 @@ def readAndParseData18xx(Dataport, configParameters):
 # ------------------------------------------------------------------
 
 # Funtion to update the data and display in the plot
-def update():
+def update(configParameters, p):
      
     dataOk = 0
     global detObj
@@ -271,9 +270,9 @@ def update():
         x = -detObj["x"]
         y = detObj["y"]
         
-        # Perform DBSCAN clustering
+        ### Perform DBSCAN clustering
         X = np.column_stack((x, y))
-        dbscan = DBSCAN(eps=0.5, min_samples=4)
+        dbscan = DBSCAN(eps=0.3, min_samples=3)
         labels = dbscan.fit_predict(X) # [0, -1, 1, 0, 2, 0, -1, 1...] 0th, 3rd, and 5th element belong to 0th cluster etc...
         
         # Clear previous scatter plot items
@@ -282,94 +281,136 @@ def update():
         # Plot data points coloured by DBSCAN cluster labels
         for label in np.unique(labels):
             if label == -1:  # Outliers
-                mask = (labels == label) # e.g. mask = [True, False, False, True, True...]
+                mask = (labels == label) # e.g. mask = [False, True, False, False, False, False, True, False...]
                 p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(255, 0, 0), symbolSize=5)
             else:  # Inliers
-                mask = (labels == label)
-                p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(0, 0, 255), symbolSize=5)
+                mask = (labels == label) # In the inliers case, a label is a single cluster
+                p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(1, 50, 32), symbolSize=5)
                 points = np.column_stack((x[mask], y[mask]))
-                hull = ConvexHull(points) # Perform Convex Hull algorithm
+                
+                # Perform Convex Hull and get the 'area' of object
+                hull = ConvexHull(points)
                 for simplex in hull.simplices:
                     p.plot(points[simplex, 0], points[simplex, 1], pen=pg.mkPen(color='k', width=3))
-                text = pg.TextItem(str(format(hull.area, '.3f')))
+                text = pg.TextItem(str(format(hull.area, '.3f'))) # Show the hull area
                 p.addItem(text)
                 text.setPos(points[simplex, 0][0], points[simplex, 1][0])
-                # print(hull.area) # print the area of the corresponding shapes
                 
-        # Add radial boundaries - Azmiuth 30 deg        
-        p.plot(x = [-5.77, 0, 5.77], y = [10, 0, 10], pen=pg.mkPen(color='g', width=2))
+                ### OBJECT TRACKING
+                # Centre locations of clusters
+                centroid = np.mean(X[mask], axis = 0)
+
+                found_match = False
+                for object_id, object_info in tracked_objects.items():
+                    if np.linalg.norm(centroid - object_info["position"]) < 0.1:
+                        tracked_objects[object_id]["position"] = centroid
+                        tracked_objects[object_id]["frame_count"] += 1
+                        found_match = True
+                    
+                if not found_match:
+                    tracked_objects[len(tracked_objects)] = {"position": centroid, "frame_count": 1} # Add a new object
+                    
+        # Remove old objects
+        lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) < 10]
+        for object_id in lost_objects:
+            del tracked_objects[object_id]
         
+        # VISUALISE TRACKS
+                
         # Add circular grid lines
-        num_lines = 5
-        radius = 2
-        angles = np.linspace(0, 2*np.pi, 100)
-        for i in range(1, num_lines + 1):
-            x = radius * np.cos(angles)
-            y = radius * np.sin(angles)
-            p.plot(x, y, pen=pg.mkPen(color='g', width=2, style=pg.QtCore.Qt.DotLine))
-            radius += 2 
+        create_circular_grid(p)
+        create_boundaries(p)
         
-        # s.setData(x, y)
+        # s.setData(x, y) # FIXME - What does this even do?
         QtWidgets.QApplication.processEvents()
     
     return dataOk
 
+# -----------------------------------------------------------------
 
-# -------------------------    MAIN   -----------------------------------------  
-
-# Configurate the serial port
-CLIport, Dataport = serialConfig(configFileName)
-
-# Get the configuration parameters from the configuration file
-configParameters = parseConfigFile(configFileName)
-
-# START QtAPPfor the plot
-app = QtWidgets.QApplication([])
-
-# Set the plot 
-pg.setConfigOption('background', 'b')
-win = pg.GraphicsLayoutWidget(title="2D scatter plot")
-p = win.addPlot()
-p.setXRange(-6, 6)
-p.setYRange(0, 11)
-p.setLabel('left',text = 'Y position (m)')
-p.setLabel('bottom', text= 'X position (m)')
-p.setLabel('right',text =None)
-p.setLabel('top', text=None)
-# p.showGrid(True, True)
-# s = p.plot([],[],pen=None,symbol='o')
-
-# Set the border color and width
-border_pen = pg.mkPen(color='g', width=2)
-p.getAxis('left').setPen(border_pen)  # Left border
-p.getAxis('bottom').setPen(border_pen)  # Bottom border
-p.getAxis('right').setPen(border_pen)  # Right border
-p.getAxis('top').setPen(border_pen)  # Top border
-
-p.setAspectLocked()    
-
-win.show()
-
-# Main loop 
-detObj = {}  
-frameData = {}    
-currentIndex = 0
-while True:
-    try:
-        # Update the data and check if the data is okay
-        dataOk = update()
+def create_circular_grid(p):
+    num_lines = 5
+    radius = 1
+    angles = np.linspace(0, 2*np.pi, 100)
+    for i in range(1, num_lines + 1):
+        x = radius * np.cos(angles)
+        y = radius * np.sin(angles)
+        p.plot(x, y, pen=pg.mkPen(color='g', width=2, style=pg.QtCore.Qt.DotLine))
+        radius += 1
         
-        if dataOk:
-            # Store the current frame into frameData
-            frameData[currentIndex] = detObj
-            currentIndex += 1
+# ----------------------------------------------------------------
+
+def create_boundaries(p):
+    # Define rectangle coordinates and size
+    rect = QtWidgets.QGraphicsRectItem(-2, 4, 4, 4)  # (x, y, width, height)
+    pen = pg.mkPen(color='r', width=2)
+    rect.setPen(pen)
+    # rect.setBrush(brush)
+    p.addItem(rect)
+    
+    # Add radial boundaries - Azmiuth 30 deg        
+    p.plot(x = [-5.77, 0, 5.77], y = [10, 0, 10], pen=pg.mkPen(color='g', width=2))
+
+# -------------------------    MAIN   -----------------------------
+
+def main():
+    
+    # Configurate the serial port
+    CLIport, Dataport = serialConfig(configFileName)
+
+    # Get the configuration parameters from the configuration file
+    configParameters = parseConfigFile(configFileName)
+    
+    # START QtAPPfor the plot
+    app = QtWidgets.QApplication([])
+
+    # Set the plot 
+    pg.setConfigOption('background', 'b')
+    win = pg.GraphicsLayoutWidget(title="2D scatter plot")
+    p = win.addPlot()
+    p.setXRange(-2, 2)
+    p.setYRange(0, 4)
+    p.setLabel('left',text = 'Y position (m)')
+    p.setLabel('bottom', text= 'X position (m)')
+    p.setLabel('right',text =None)
+    p.setLabel('top', text=None)
+    # p.showGrid(True, True)
+    # s = p.plot([],[],pen=None,symbol='o')
+
+    # Set the border color and width
+    border_pen = pg.mkPen(color='g', width=2)
+    p.getAxis('left').setPen(border_pen)  # Left border
+    p.getAxis('bottom').setPen(border_pen)  # Bottom border
+    p.getAxis('right').setPen(border_pen)  # Right border
+    p.getAxis('top').setPen(border_pen)  # Top border
+
+    p.setAspectLocked()    
+
+    win.show()
+
+    # Main loop 
+    detObj = {}
+    frameData = {}
+    currentIndex = 0
+    while True:
+        try:
+            # Update the data and check if the data is okay
+            dataOk = update(configParameters, p)
+            
+            if dataOk:
+                # Store the current frame into frameData
+                frameData[currentIndex] = detObj
+                currentIndex += 1
+            
+            # time.sleep(0.05) # Sampling frequency of 30 Hz ### \\TODO - HINT INTO FRAME RATE ISSUE???
+            
+        # Stop the program and close everything if Ctrl + c is pressed
+        except KeyboardInterrupt:
+            CLIport.write(('sensorStop\n').encode())
+            CLIport.close()
+            Dataport.close()
+            win.close()
+            break
         
-        time.sleep(0.05) # Sampling frequency of 30 Hz ### \\TODO - HINT INTO FRAME RATE ISSUE???
-        
-    # Stop the program and close everything if Ctrl + c is pressed
-    except KeyboardInterrupt:
-        CLIport.write(('sensorStop\n').encode())
-        CLIport.close()
-        Dataport.close()
-        win.close()
-        break
+if __name__ == "__main__":
+    main()
