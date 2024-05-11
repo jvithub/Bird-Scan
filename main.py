@@ -6,6 +6,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from sklearn.cluster import DBSCAN
 from scipy.spatial import ConvexHull
+import random as rand
 
 # Change the configuration file name
 configFileName = 'Config Files/B.cfg'
@@ -15,6 +16,13 @@ Dataport = {}
 byteBuffer = np.zeros(2**15, dtype = 'uint8')
 byteBufferLength = 0
 tracked_objects = {}
+entries = 0
+exits = 0
+
+BOUNDARY_X = -0.5
+BOUNDARY_Y = 1
+BOUNDARY_WIDTH = 1
+BOUNDARY_HEIGHT = 1
 
 # ------------------------------------------------------------------
 
@@ -266,17 +274,14 @@ def update(configParameters, p):
     dataOk, frameNumber, detObj = readAndParseData18xx(Dataport, configParameters)
     
     if dataOk and len(detObj["x"]) > 0:
-        # print(detObj)
+        
         x = -detObj["x"]
         y = detObj["y"]
         
         ### Perform DBSCAN clustering
         X = np.column_stack((x, y))
-        dbscan = DBSCAN(eps=0.5, min_samples=2)
+        dbscan = DBSCAN(eps=0.5, min_samples=3)
         labels = dbscan.fit_predict(X) # [0, -1, 1, 0, 2, 0, -1, 1...] 0th, 3rd, and 5th element belong to 0th cluster etc...
-        
-        # Clear previous scatter plot items
-        p.clear()
         
         # Plot data points coloured by DBSCAN cluster labels
         for label in np.unique(labels):
@@ -297,26 +302,25 @@ def update(configParameters, p):
                 # text.setPos(points[simplex, 0][0], points[simplex, 1][0])
                 
                 ### OBJECT TRACKING
-                # Centre locations of clusters
+                # Centre location of cluster
                 centroid = np.mean(X[mask], axis = 0)
 
                 found_match = False
                 for object_id, object_info in tracked_objects.items():
-                    if np.linalg.norm(centroid - object_info["position"]) < 0.1:
+                    if np.linalg.norm(centroid - object_info["position"]) < 0.2: # Calculate the euclidian distance
+                        check_entries_exits(centroid[0], centroid[1], object_info["position"][0], object_info["position"][1])
                         tracked_objects[object_id]["position"] = centroid
-                        if tracked_objects[object_id]["frame_count"] == 0:
-                            tracked_objects[object_id]["frame_count"] += frameNumber # Catch up object frame to moment of creation
                         tracked_objects[object_id]["frame_count"] += 1
                         found_match = True
                     
                 if not found_match:
-                    tracked_objects[len(tracked_objects)] = {"position": centroid, "frame_count": 1} # Add a new object
+                    tracked_objects[len(tracked_objects)] = {"position": centroid, "frame_count": frameNumber} # Add a new object
                     
-        # Remove old objects after 10 seconds: 300 S / 30 FPS
-        lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) > 300]
+        # Remove old objects after 5 seconds: 150 S / 30 FPS
+        lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) > 150]
         for object_id in lost_objects:
-            del tracked_objects[object_id]
-        
+            tracked_objects.pop(object_id)
+            
         # VISUALISE TRACKS
         visualise_tracked_objects(p)
                 
@@ -326,14 +330,35 @@ def update(configParameters, p):
         # Add boundaries for counting
         create_boundaries(p)
         
+        text_counts = pg.TextItem("Entries:" + str(entries) + "\n Exits:" + str(exits))
+        p.addItem(text_counts)
+        text_counts.setPos(-2, 3)
+        
         # s.setData(x, y) # FIXME - What does this even do?
         QtWidgets.QApplication.processEvents()
+        
+        # Clear previous scatter plot items
+        p.clear()
     
     return dataOk
 
 # -----------------------------------------------------------------
 
+def check_entries_exits(xi, yi, x, y):
+    global entries, exits
+    if (xi < BOUNDARY_X or xi > (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi < BOUNDARY_Y or yi > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+        if ((x > BOUNDARY_X or x < (BOUNDARY_X + BOUNDARY_WIDTH)) and (y > BOUNDARY_Y or y < (BOUNDARY_Y + BOUNDARY_HEIGHT))):
+            entries += 1
+        print(entries)
+    elif (xi > BOUNDARY_X or xi < (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi > BOUNDARY_Y or yi < (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+        if (x < BOUNDARY_X or x > (BOUNDARY_X + BOUNDARY_WIDTH)) and (y < BOUNDARY_Y or y > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+            exits += 1
+            print(exits)    
+
+# -----------------------------------------------------------------
+
 def visualise_tracked_objects(p):
+    
     for object_id, object_info in tracked_objects.items():
         centroid = object_info["position"]
         p.plot([centroid[0]], [centroid[1]], pen=None, symbol='x', symbolBrush=(255, 255, 255), symbolSize=20)  
@@ -354,10 +379,9 @@ def create_circular_grid(p):
 
 def create_boundaries(p):
     # Define rectangle coordinates and size
-    rect = QtWidgets.QGraphicsRectItem(-0.5, 1, 1, 1)  # (x, y, width, height)
+    rect = QtWidgets.QGraphicsRectItem(BOUNDARY_X, BOUNDARY_Y, BOUNDARY_WIDTH, BOUNDARY_HEIGHT)  # (x, y, width, height)
     pen = pg.mkPen(color='r', width=2)
     rect.setPen(pen)
-    # rect.setBrush(brush)
     p.addItem(rect)
     
     # Add radial boundaries - Azmiuth 30 deg        
