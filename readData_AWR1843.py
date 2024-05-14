@@ -265,10 +265,13 @@ def update():
     # Read and parse the received data
     dataOk, frameNumber, detObj = readAndParseData18xx(Dataport, configParameters)
     
+    
+    
     if dataOk and len(detObj["x"]) > 0:
-        # print(detObj)
         x = -detObj["x"]
         y = detObj["y"]
+        
+        print(frameNumber)
         
         s.setData(x, y)
         QtWidgets.QApplication.processEvents()

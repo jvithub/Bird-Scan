@@ -15,8 +15,8 @@ CLIport = {}
 Dataport = {}
 byteBuffer = np.zeros(2**15, dtype = 'uint8')
 byteBufferLength = 0
-tracked_objects = {}
-entries = 0
+tracked_objects = {} # Store the information of tracked objects
+entries = 0 
 exits = 0
 
 BOUNDARY_X = -0.5
@@ -293,13 +293,15 @@ def update(configParameters, p):
                 p.plot(x[mask], y[mask], pen=None, symbol='o', symbolBrush=(1, 50, 32), symbolSize=5)
                 points = np.column_stack((x[mask], y[mask]))
                 
-                # Perform Convex Hull and get the 'area' of object
+                # Perform Convex Hull and get the 'area' of object FIXME - Currently no point doing convex hull when average of data returned from bird is 2 points
+                '''
                 # hull = ConvexHull(points)
                 # for simplex in hull.simplices:
                 #     p.plot(points[simplex, 0], points[simplex, 1], pen=pg.mkPen(color='k', width=3))
                 # text = pg.TextItem(str(format(hull.area, '.3f'))) # Show the hull area
                 # p.addItem(text)
                 # text.setPos(points[simplex, 0][0], points[simplex, 1][0])
+                '''
                 
                 ### OBJECT TRACKING
                 # Centre location of cluster
@@ -330,17 +332,23 @@ def update(configParameters, p):
         # Add boundaries for counting
         create_boundaries(p)
         
-        text_counts = pg.TextItem("Entries:" + str(entries) + "\n Exits:" + str(exits))
-        p.addItem(text_counts)
-        text_counts.setPos(-2, 3)
+        # Create a displate number of entries and exits
+        create_entries_exits_text(p)
         
         # s.setData(x, y) # FIXME - What does this even do?
         QtWidgets.QApplication.processEvents()
         
-        # Clear previous scatter plot items
+        # Clear previous scatter plot items so plots from next frame(s) don't overlap
         p.clear()
     
     return dataOk
+
+# -----------------------------------------------------------------
+
+def create_entries_exits_text(p):
+    text_counts = pg.TextItem("Entries:" + str(entries) + "\n Exits:" + str(exits))
+    p.addItem(text_counts)
+    text_counts.setPos(-2, 3)
 
 # -----------------------------------------------------------------
 
@@ -349,11 +357,9 @@ def check_entries_exits(xi, yi, x, y):
     if (xi < BOUNDARY_X or xi > (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi < BOUNDARY_Y or yi > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
         if ((x > BOUNDARY_X or x < (BOUNDARY_X + BOUNDARY_WIDTH)) and (y > BOUNDARY_Y or y < (BOUNDARY_Y + BOUNDARY_HEIGHT))):
             entries += 1
-        print(entries)
     elif (xi > BOUNDARY_X or xi < (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi > BOUNDARY_Y or yi < (BOUNDARY_Y + BOUNDARY_HEIGHT)):
         if (x < BOUNDARY_X or x > (BOUNDARY_X + BOUNDARY_WIDTH)) and (y < BOUNDARY_Y or y > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
-            exits += 1
-            print(exits)    
+            exits += 1    
 
 # -----------------------------------------------------------------
 
