@@ -9,7 +9,7 @@ from scipy.spatial import ConvexHull
 import random as rand
 
 # Change the configuration file name
-configFileName = 'Config Files/B.cfg'
+configFileName = 'Config Files/demo.cfg'
 
 CLIport = {}
 Dataport = {}
@@ -310,18 +310,23 @@ def update(configParameters, p):
                 found_match = False
                 for object_id, object_info in tracked_objects.items(): # For each, DBSCAN label, the last object in tracked_objects which is in range will be the tracked on.
                     if np.linalg.norm(centroid - object_info["position"]) < 0.2: # Calculate the euclidian distance
-                        check_entries_exits(centroid[0], centroid[1], object_info["position"][0], object_info["position"][1]) # FIXME - Need to move this
+                        # check_entries_exits(centroid[0], centroid[1], object_info["position"][0], object_info["position"][1]) # FIXME - Need to move this
+                        tracked_objects[object_id]["prev_position"] = tracked_objects[object_id]["position"]
                         tracked_objects[object_id]["position"] = centroid
                         tracked_objects[object_id]["frame_count"] += 1
                         found_match = True
                     
                 if not found_match:
-                    tracked_objects[len(tracked_objects)] = {"position": centroid, "frame_count": frameNumber} # Add a new object with the current frame number
+                    tracked_objects[len(tracked_objects)] = {"prev_position": centroid, "position": centroid, "frame_count": frameNumber} # Add a new object with the current frame number
                     
         # Remove old objects if it doesn't show up in frames after 5 seconds: 150 S / 30 FPS
         lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) > 150]
         for object_id in lost_objects:
             tracked_objects.pop(object_id)
+            
+        # Check previous and current positions of all tracked objects to see if any have crossed the boundary.
+        for _, object_info in tracked_objects.items():
+            check_entries_exits(object_info["prev_position"][0], object_info["prev_position"][1], object_info["position"][0], object_info["position"][1])
             
         # VISUALISE TRACKS
         visualise_tracked_objects(p)
@@ -354,18 +359,21 @@ def create_entries_exits_text(p):
 
 def check_entries_exits(xi, yi, x, y):
     global entries, exits
-    if (xi < BOUNDARY_X or xi > (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi < BOUNDARY_Y or yi > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
-        if ((x > BOUNDARY_X or x < (BOUNDARY_X + BOUNDARY_WIDTH)) and (y > BOUNDARY_Y or y < (BOUNDARY_Y + BOUNDARY_HEIGHT))):
+    # Check if previous position was inside and current position is outside
+    if (xi > BOUNDARY_X and xi < (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi > BOUNDARY_Y and yi < (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+        if (x < BOUNDARY_X or x > (BOUNDARY_X + BOUNDARY_WIDTH)) or (y < BOUNDARY_Y or y > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+            exits += 1
+    # Check if previous position was outside and current position is inside
+    if (x > BOUNDARY_X and x < (BOUNDARY_X + BOUNDARY_WIDTH)) and (y > BOUNDARY_Y and y < (BOUNDARY_Y + BOUNDARY_HEIGHT)):
+        if (xi < BOUNDARY_X or xi > (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi < BOUNDARY_Y or yi > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
             entries += 1
-    elif (xi > BOUNDARY_X or xi < (BOUNDARY_X + BOUNDARY_WIDTH)) and (yi > BOUNDARY_Y or yi < (BOUNDARY_Y + BOUNDARY_HEIGHT)):
-        if (x < BOUNDARY_X or x > (BOUNDARY_X + BOUNDARY_WIDTH)) and (y < BOUNDARY_Y or y > (BOUNDARY_Y + BOUNDARY_HEIGHT)):
-            exits += 1    
+
 
 # -----------------------------------------------------------------
 
 def visualise_tracked_objects(p):
     
-    for object_id, object_info in tracked_objects.items():
+    for _, object_info in tracked_objects.items():
         centroid = object_info["position"]
         p.plot([centroid[0]], [centroid[1]], pen=None, symbol='x', symbolBrush=(255, 255, 255), symbolSize=20)  
 
@@ -444,7 +452,7 @@ def main():
                 frameData[currentIndex] = detObj
                 currentIndex += 1
             
-            # time.sleep(0.05) # Sampling frequency of 30 Hz ### \\TODO - HINT INTO FRAME RATE ISSUE???
+            # time.sleep(0.01) # Sampling frequency of 30 Hz ### \\TODO - HINT INTO FRAME RATE ISSUE???
             
         # Stop the program and close everything if Ctrl + c is pressed
         except KeyboardInterrupt:
