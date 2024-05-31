@@ -9,7 +9,7 @@ from scipy.spatial import ConvexHull
 import random as rand
 
 # Change the configuration file name
-configFileName = 'Config Files/demo.cfg'
+configFileName = 'Config Files/1642.cfg'
 
 CLIport = {}
 Dataport = {}
@@ -46,9 +46,9 @@ def serialConfig(configFileName):
     # CLIport = serial.Serial('/dev/tty.usbmodemR00410271', 115200)
     # Dataport = serial.Serial('/dev/tty.usbmodemR00410274', 921600)
     
-    # MacOS - AWR1843AOP
-    CLIport = serial.Serial('/dev/tty.SLAB_USBtoUART', 115200)
-    Dataport = serial.Serial('/dev/tty.SLAB_USBtoUART2', 921600)
+    # MacOS - AWR1642
+    CLIport = serial.Serial('/dev/tty.usbmodemR00410271', 115200)
+    Dataport = serial.Serial('/dev/tty.usbmodemR00410274', 921600)
 
     # Read the configuration file and send it to the board
     config = [line.rstrip('\r\n') for line in open(configFileName)]
@@ -309,7 +309,7 @@ def update(configParameters, p):
 
                 found_match = False
                 for object_id, object_info in tracked_objects.items(): # For each, DBSCAN label, the last object in tracked_objects which is in range will be the tracked on.
-                    if np.linalg.norm(centroid - object_info["position"]) < 0.2: # Calculate the euclidian distance
+                    if np.linalg.norm(centroid - object_info["position"]) < 0.3: # Calculate the euclidian distance
                         # check_entries_exits(centroid[0], centroid[1], object_info["position"][0], object_info["position"][1]) # FIXME - Need to move this
                         tracked_objects[object_id]["prev_position"] = tracked_objects[object_id]["position"]
                         tracked_objects[object_id]["position"] = centroid
@@ -317,7 +317,7 @@ def update(configParameters, p):
                         found_match = True
                     
                 if not found_match:
-                    tracked_objects[len(tracked_objects)] = {"prev_position": centroid, "position": centroid, "frame_count": frameNumber} # Add a new object with the current frame number
+                    tracked_objects[len(tracked_objects)] = {"prev_position": centroid, "position": centroid, "frame_count": frameNumber, "colour": None} # Add a new object with the current frame number
                     
         # Remove old objects if it doesn't show up in frames after 5 seconds: 150 S / 30 FPS
         lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) > 150]
@@ -373,9 +373,15 @@ def check_entries_exits(xi, yi, x, y):
 
 def visualise_tracked_objects(p):
     
+
     for _, object_info in tracked_objects.items():
+        if object_info["colour"] is None:
+            red = rand.randint(0, 255)
+            blue = rand.randint(0, 255)
+            green = rand.randint(0, 255)
+            object_info["colour"] = (red, blue, green) # Keep the same colour even when other objects are deleted from tracked_objects - Stop the shifting of colours.
         centroid = object_info["position"]
-        p.plot([centroid[0]], [centroid[1]], pen=None, symbol='x', symbolBrush=(255, 255, 255), symbolSize=20)  
+        p.plot([centroid[0]], [centroid[1]], pen=None, symbol='x', symbolBrush=object_info["colour"], symbolSize=20)  
 
 # -----------------------------------------------------------------
 
@@ -437,6 +443,8 @@ def main():
     p.setAspectLocked()    
 
     win.show()
+    
+    rand.seed(a="'Colour' is the right way to spell it in Australia") # Lets create a deterministic random number generator - Given the same seed.
 
     # Main loop 
     detObj = {}
