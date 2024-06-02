@@ -284,7 +284,7 @@ def update(configParameters, p):
         
         global sign
         
-        if frameNumber % 5 == 0:
+        if frameNumber % 1 == 0:
             if virtual_obj_y[0] >= 1.5:
                 sign = -1
             if virtual_obj_y[0] <= 0:
@@ -293,9 +293,7 @@ def update(configParameters, p):
         x = np.append(x, virtual_obj_x[0])
         x = np.append(x, virtual_obj_x[1])
         y = np.append(y, virtual_obj_y[0])
-        y = np.append(y, virtual_obj_y[1])
-        
-        print(x), print(y)
+        y = np.append(y, virtual_obj_y[1])  # Be careful data looks like e.g. [0.586876, 0.1      ] with trailing spaces - shouldn't matter.
         
         ### Perform DBSCAN clustering
         X = np.column_stack((x, y))
@@ -327,25 +325,32 @@ def update(configParameters, p):
                 centroid = np.mean(X[mask], axis = 0)
 
                 found_match = False
-                for object_id, object_info in tracked_objects.items(): # For each, DBSCAN label, the last object in tracked_objects which is in range will be the tracked on.
+                for object_id, object_info in tracked_objects.items(): 
+                    # For each, DBSCAN label, the last object in tracked_objects which is in range will be the tracked on.
                     if np.linalg.norm(centroid - object_info["position"]) < 0.3: # Calculate the euclidian distance
-                        # check_entries_exits(centroid[0], centroid[1], object_info["position"][0], object_info["position"][1]) # FIXME - Need to move this
-                        tracked_objects[object_id]["prev_position"] = tracked_objects[object_id]["position"]
+                        tracked_objects[object_id]["prev_position"] = \
+                            tracked_objects[object_id]["position"]
                         tracked_objects[object_id]["position"] = centroid
                         tracked_objects[object_id]["frame_count"] += 1
                         found_match = True
                     
                 if not found_match:
-                    tracked_objects[len(tracked_objects)] = {"prev_position": centroid, "position": centroid, "frame_count": frameNumber, "colour": None} # Add a new object with the current frame number
+                        # Add a new object with the current frame number
+                    tracked_objects[len(tracked_objects)] = \
+                        {"prev_position": centroid, "position": centroid, 
+                         "frame_count": frameNumber, "colour": None}
                     
         # Remove old objects if it doesn't show up in frames after 5 seconds: 150 S / 30 FPS
-        lost_objects = [object_id for object_id, object_info in tracked_objects.items() if (frameNumber - object_info["frame_count"]) > 150]
+        lost_objects = \
+            [object_id for object_id, object_info in tracked_objects.items() 
+             if (frameNumber - object_info["frame_count"]) > 150]
         for object_id in lost_objects:
             tracked_objects.pop(object_id)
             
         # Check previous and current positions of all tracked objects to see if any have crossed the boundary.
         for _, object_info in tracked_objects.items():
-            check_entries_exits(object_info["prev_position"][0], object_info["prev_position"][1], object_info["position"][0], object_info["position"][1])
+            check_entries_exits(object_info["prev_position"][0], object_info["prev_position"][1],
+                                object_info["position"][0], object_info["position"][1])
             
         # VISUALISE TRACKS
         visualise_tracked_objects(p)
